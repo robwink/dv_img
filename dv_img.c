@@ -22,6 +22,7 @@
 
 void setup();
 void cleanup(int ret);
+void load_image(const char* path);
 int handle_events();
 void set_rect();
 
@@ -40,10 +41,13 @@ int scr_height;
 
 int img_width;
 int img_height;
+int img_index;
 
 float zoom;
 
 SDL_Rect rect;
+
+cvector_str files;
 
 
 
@@ -57,24 +61,21 @@ int main(int argc, char** argv)
 
 	setup();
 
-	int n;
-	img = stbi_load(argv[1], &img_width, &img_height, &n, 4);
-	if (!img) {
-		printf("failed to load %s: %s\n", argv[1], stbi_failure_reason());
-		cleanup(1);
-	}
+	char* path = argv[1];
+
+	load_image(path);
 	
 	char dirpath[4096] = { 0 };
 
 	//dirname
-	char* last_slash = strrchr(argv[1], '/');
+	char* last_slash = strrchr(path, '/');
 	if (last_slash) {
-		strncpy(dirpath, argv[1], last_slash-argv[1]+1);
+		strncpy(dirpath, path, last_slash-path+1);
 	} else {
 		dirpath[0] = '.';
 	}
 
-	int dirlen = last_slash-argv[1]+1;
+	int dirlen = last_slash-path+1;
 
 
 	DIR* dir = opendir(dirpath);
@@ -86,7 +87,6 @@ int main(int argc, char** argv)
 	struct dirent* entry;
 	struct stat file_stat;
 
-	cvector_str files;
 	cvec_str(&files, 0, 20);
 
 	while ((entry = readdir(dir))) {
@@ -104,6 +104,8 @@ int main(int argc, char** argv)
 	qsort(files.a, files.size, sizeof(char*), cmp_string_lt);
 
 	for (int i=0; i<files.size; ++i) {
+		if (!strcmp(files.a[i], path))
+			img_index = i;
 		puts(files.a[i]);
 	}
 
@@ -120,16 +122,6 @@ int main(int argc, char** argv)
 	}
 */
 
-	tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC, img_width, img_height);
-	if (!tex) {
-		printf("Error: %s\n", SDL_GetError());
-		cleanup(1);
-	}
-
-	if (SDL_UpdateTexture(tex, NULL, img, img_width*4)) {
-		printf("Error updating texture: %s\n", SDL_GetError());
-		cleanup(1);
-	}
 
 	set_rect();
 
@@ -171,12 +163,35 @@ void set_rect()
 }
 
 
+void load_image(const char* path)
+{
+	int n;
+	img = stbi_load(path, &img_width, &img_height, &n, 4);
+	if (!img) {
+		printf("failed to load %s: %s\n", path, stbi_failure_reason());
+		cleanup(1);
+	}
+
+	tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC, img_width, img_height);
+	if (!tex) {
+		printf("Error: %s\n", SDL_GetError());
+		cleanup(1);
+	}
+
+	if (SDL_UpdateTexture(tex, NULL, img, img_width*4)) {
+		printf("Error updating texture: %s\n", SDL_GetError());
+		cleanup(1);
+	}
+}
+
 void setup()
 {
 	win = NULL;
 	ren = NULL;
 	bmp = NULL;
 	tex = NULL;
+
+	img = NULL;
 
 	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
 
@@ -222,6 +237,20 @@ int handle_events()
 
 			case SDL_SCANCODE_F:
 				SDL_SetWindowFullscreen(win, SDL_WINDOW_FULLSCREEN_DESKTOP);
+				break;
+
+			case SDL_SCANCODE_RIGHT:
+			case SDL_SCANCODE_DOWN:
+				img_index = (img_index + 1) % files.size;
+
+				stbi_image_free(img);
+				SDL_DestroyTexture(tex);
+
+				//loads and creates a new texture
+				load_image(files.a[img_index]);
+
+				set_rect();
+
 				break;
 
 			case SDL_SCANCODE_ESCAPE:
