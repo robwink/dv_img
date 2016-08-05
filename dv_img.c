@@ -15,14 +15,14 @@
 #include <dirent.h>
 
 
-
+#define SDL_MAIN_HANDLED
 #include <SDL2/SDL.h>
 
 
 
-void setup();
+void setup(const char* img_name);
 void cleanup(int ret);
-void load_image(const char* path);
+int load_image(const char* path);
 int handle_events();
 void set_rect();
 
@@ -50,6 +50,62 @@ SDL_Rect rect;
 cvector_str files;
 
 
+// works same as SUSv2 libgen.h dirname except that
+// dirpath is user provided output buffer, assumed large
+// enough, return value is dirpath
+char* dirname(const char* path, char* dirpath)
+{
+
+#define PATH_SEPARATOR '/'
+
+	if (!path || !path[0]) {
+		dirpath[0] = '.';
+		dirpath[1] = 0;
+		return dirpath;
+	}
+
+	char* last_slash = strrchr(path, PATH_SEPARATOR);
+	if (last_slash) {
+		strncpy(dirpath, path, last_slash-path);
+		puts("1");
+	} else {
+		dirpath[0] = '.';
+		dirpath[1] = 0;
+		puts("2");
+	}
+
+	printf("%p\ndirpath = %s\n", dirpath, dirpath);
+	return dirpath;
+}
+
+// same as SUSv2 basename in libgen.h except base is output
+// buffer
+char* basename(const char* path, char* base)
+{
+	if (!path || !path[0]) {
+		base[0] = '.';
+		base[1] = 0;
+		return base;
+	}
+
+	int end = strlen(path) - 1;
+
+	if (path[end] == PATH_SEPARATOR)
+		end--;
+
+	int start = end;
+	while (path[start] != PATH_SEPARATOR && start != 0)
+		start--;
+
+	memcpy(base, &path[start], end-start+1);
+	base[end-start+1] = 0;
+
+	return base;
+}
+
+
+
+
 
 
 int main(int argc, char** argv)
@@ -59,23 +115,26 @@ int main(int argc, char** argv)
 		exit(0);
 	}
 
-	setup();
-
 	char* path = argv[1];
-
-	load_image(path);
-	
 	char dirpath[4096] = { 0 };
+	char fullpath[4096] = { 0 };
+	char img_name[1024] = { 0 };
+	int dirlen = 0;
 
 	//dirname
-	char* last_slash = strrchr(path, '/');
-	if (last_slash) {
-		strncpy(dirpath, path, last_slash-path+1);
-	} else {
-		dirpath[0] = '.';
-	}
+	dirname(path, dirpath);
+	basename(path, img_name);
 
-	int dirlen = last_slash-path+1;
+	printf("%p\ndirpath = %s\n", dirpath, dirpath);
+
+	setup(img_name);
+
+
+	if (!load_image(path)) {
+		cleanup(0);
+	}
+	
+
 
 
 	DIR* dir = opendir(dirpath);
@@ -89,17 +148,22 @@ int main(int argc, char** argv)
 
 	cvec_str(&files, 0, 20);
 
+	int ret;
 	while ((entry = readdir(dir))) {
-		dirpath[dirlen] = 0;
-		strcat(dirpath, entry->d_name);
-		if (stat(dirpath, &file_stat)) {
-			perror("stat");
+		ret = snprintf(fullpath, 4096, "%s/%s", dirpath, entry->d_name);
+		if (ret >= 4096) {
+			printf("path too long\n");
+			cleanup(0);
 		}
-
+		if (stat(fullpath, &file_stat)) {
+			perror("stat");
+			continue;
+		}
 		if (S_ISREG(file_stat.st_mode)) {
-			cvec_push_str(&files, dirpath);
+			cvec_push_str(&files, fullpath);
 		}
 	}
+	closedir(dir);
 
 	qsort(files.a, files.size, sizeof(char*), cmp_string_lt);
 
@@ -108,20 +172,6 @@ int main(int argc, char** argv)
 			img_index = i;
 		puts(files.a[i]);
 	}
-
-
-
-
-
-/*
- * alternative to stb_image, SDL has built in bmp handling
-	bmp = SDL_LoadBMP("../hello.bmp");
-	if (!bmp) {
-		printf("Error: %s\n", SDL_GetError());
-		cleanup();
-	}
-*/
-
 
 	set_rect();
 
@@ -163,28 +213,31 @@ void set_rect()
 }
 
 
-void load_image(const char* path)
+int load_image(const char* path)
 {
 	int n;
 	img = stbi_load(path, &img_width, &img_height, &n, 4);
+	printf("path = %s\n", path);
 	if (!img) {
 		printf("failed to load %s: %s\n", path, stbi_failure_reason());
-		cleanup(1);
+		return 0;
 	}
 
 	tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STATIC, img_width, img_height);
 	if (!tex) {
 		printf("Error: %s\n", SDL_GetError());
-		cleanup(1);
+		return 0;
 	}
 
 	if (SDL_UpdateTexture(tex, NULL, img, img_width*4)) {
 		printf("Error updating texture: %s\n", SDL_GetError());
-		cleanup(1);
+		return 0;
 	}
+
+	return 1;
 }
 
-void setup()
+void setup(const char* img_name)
 {
 	win = NULL;
 	ren = NULL;
@@ -195,6 +248,8 @@ void setup()
 
 	SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
 
+	//not sure if necessary
+	SDL_SetMainReady();
 	if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
 		printf("SDL_Init error: %s\n", SDL_GetError());
 		exit(1);
@@ -203,14 +258,16 @@ void setup()
 	scr_width = 640;
 	scr_height = 480;
 
-	win = SDL_CreateWindow("dv_img", 100, 100, scr_width, scr_height, SDL_WINDOW_RESIZABLE);
+	//char title_buf[1024] = { "dv_img" };
+
+	win = SDL_CreateWindow(img_name, 100, 100, scr_width, scr_height, SDL_WINDOW_RESIZABLE);
 	if (!win) {
 		printf("Error: %s\n", SDL_GetError());
 		exit(1);
 	}
 
-	ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-	//ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_SOFTWARE);
+	//ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
+	ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_SOFTWARE);
 	if (!ren) {
 		printf("Error: %s\n", SDL_GetError());
 		cleanup(1);
@@ -224,6 +281,8 @@ int handle_events()
 	SDL_Event e;
 	int sc;
 	int height, width;
+	int ret;
+	char title_buf[1024];
 
 	int remake_rect = 0;
 
@@ -241,16 +300,33 @@ int handle_events()
 
 			case SDL_SCANCODE_RIGHT:
 			case SDL_SCANCODE_DOWN:
-				img_index = (img_index + 1) % files.size;
-
+				puts("right");
 				stbi_image_free(img);
 				SDL_DestroyTexture(tex);
 
-				//loads and creates a new texture
-				load_image(files.a[img_index]);
+				//find next available image
+				do {
+					img_index = (img_index + 1) % files.size;
+				} while (!(ret = load_image(files.a[img_index])));
+
+				SDL_SetWindowTitle(win, basename(files.a[img_index], title_buf));
 
 				set_rect();
+				break;
 
+			case SDL_SCANCODE_LEFT:
+			case SDL_SCANCODE_UP:
+				stbi_image_free(img);
+				SDL_DestroyTexture(tex);
+
+				//find next available image
+				do {
+					img_index = (img_index-1 < 0) ? files.size-1 : img_index-1;
+				} while (!(ret = load_image(files.a[img_index])));
+
+				SDL_SetWindowTitle(win, basename(files.a[img_index], title_buf));
+
+				set_rect();
 				break;
 
 			case SDL_SCANCODE_ESCAPE:
