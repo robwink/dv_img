@@ -24,7 +24,12 @@ void setup(const char* img_name);
 void cleanup(int ret);
 int load_image(const char* path);
 int handle_events();
-void set_rect();
+
+//TODO combine/reorg
+void adjust_rect();
+void set_rect_actual();
+void set_rect_bestfit();
+void set_rect_zoom();
 
 
 SDL_Window* win;
@@ -43,7 +48,7 @@ int img_width;
 int img_height;
 int img_index;
 
-float zoom;
+int zoom;
 
 SDL_Rect rect;
 
@@ -96,6 +101,8 @@ char* basename(const char* path, char* base)
 	int start = end;
 	while (path[start] != PATH_SEPARATOR && start != 0)
 		start--;
+	if (path[start] == PATH_SEPARATOR)
+		start++;
 
 	memcpy(base, &path[start], end-start+1);
 	base[end-start+1] = 0;
@@ -173,7 +180,7 @@ int main(int argc, char** argv)
 		puts(files.a[i]);
 	}
 
-	set_rect();
+	set_rect_bestfit();
 
 
 	while (1) {
@@ -199,18 +206,51 @@ int main(int argc, char** argv)
 #define MIN(X, Y) ((X < Y) ? X : Y)
 
 
-void set_rect()
+
+//need to think about best way to organize following 4 functions' functionality
+void adjust_rect()
+{
+	rect.x = (scr_width-rect.w)/2;
+	rect.y = (scr_height-rect.h)/2;
+}
+
+
+void set_rect_bestfit()
 {
 	float aspect = img_width/(float)img_height;
+	int h, w;
 	
-	int h = MIN(MIN(scr_height, scr_width/aspect), img_height);
-	int w = h * aspect;
+	h = MIN(MIN(scr_height, scr_width/aspect), img_height);
+	w = h * aspect;
 
 	rect.x = (scr_width-w)/2;
 	rect.y = (scr_height-h)/2;
 	rect.w = w;
 	rect.h = h;
 }
+
+void set_rect_actual()
+{
+	rect.x = (scr_width-img_width)/2;
+	rect.y = (scr_height-img_height)/2;
+	rect.w = img_width;
+	rect.h = img_height;
+}
+
+void set_rect_zoom()
+{
+	float aspect = img_width/(float)img_height;
+	int h, w;
+	
+	h = rect.h * (1.0 + zoom*0.05);
+	w = h * aspect;
+
+	rect.x = (scr_width-w)/2;
+	rect.y = (scr_height-h)/2;
+	rect.w = w;
+	rect.h = h;
+}
+
 
 
 int load_image(const char* path)
@@ -294,7 +334,15 @@ int handle_events()
 			sc = e.key.keysym.scancode;
 			switch (sc) {
 
+			case SDL_SCANCODE_1:
+				set_rect_actual();
+				break;
+
 			case SDL_SCANCODE_F:
+				set_rect_bestfit();
+				break;
+
+			case SDL_SCANCODE_F11:
 				SDL_SetWindowFullscreen(win, SDL_WINDOW_FULLSCREEN_DESKTOP);
 				break;
 
@@ -311,7 +359,7 @@ int handle_events()
 
 				SDL_SetWindowTitle(win, basename(files.a[img_index], title_buf));
 
-				set_rect();
+				set_rect_bestfit();
 				break;
 
 			case SDL_SCANCODE_LEFT:
@@ -326,7 +374,7 @@ int handle_events()
 
 				SDL_SetWindowTitle(win, basename(files.a[img_index], title_buf));
 
-				set_rect();
+				set_rect_bestfit();
 				break;
 
 			case SDL_SCANCODE_ESCAPE:
@@ -340,6 +388,14 @@ int handle_events()
 
 			break;
 
+		case SDL_MOUSEWHEEL:
+			if (e.wheel.direction == SDL_MOUSEWHEEL_NORMAL)
+				zoom = e.wheel.y;
+			else
+				zoom = -e.wheel.y;
+			set_rect_zoom();
+			break;
+
 		case SDL_WINDOWEVENT:
 			switch (e.window.event) {
 			case SDL_WINDOWEVENT_RESIZED:
@@ -347,9 +403,14 @@ int handle_events()
 				scr_width = e.window.data1;
 				scr_height = e.window.data2;
 
-				set_rect();
+				adjust_rect();
 
 				break;
+			case SDL_WINDOWEVENT_EXPOSED:
+				puts("exposed event");
+				break;
+			default:
+				;
 			}
 			break;
 		}
