@@ -86,7 +86,6 @@ char* dirname(const char* path, char* dirpath)
 		puts("2");
 	}
 
-	printf("%p\ndirpath = %s\n", dirpath, dirpath);
 	return dirpath;
 }
 
@@ -138,8 +137,6 @@ int main(int argc, char** argv)
 	//dirname
 	dirname(path, dirpath);
 	basename(path, img_name);
-
-	printf("%p\ndirpath = %s\n", dirpath, dirpath);
 
 	setup(img_name);
 
@@ -333,7 +330,6 @@ int handle_events()
 	int sc;
 	int ret;
 	char title_buf[1024];
-	int fs_change = 0;
 
 
 	while (SDL_PollEvent(&e)) {
@@ -347,7 +343,6 @@ int handle_events()
 				if (gs.fullscreen) {
 					SDL_SetWindowFullscreen(gs.win, 0);
 					gs.fullscreen = 0;
-					fs_change = 1;
 				} else {
 					return 1;
 				}
@@ -361,8 +356,13 @@ int handle_events()
 				break;
 
 			case SDL_SCANCODE_F11:
-				SDL_SetWindowFullscreen(gs.win, SDL_WINDOW_FULLSCREEN_DESKTOP);
-				gs.fullscreen = 1;
+				if (gs.fullscreen) {
+					SDL_SetWindowFullscreen(gs.win, 0);
+					gs.fullscreen = 0;
+				} else {
+					SDL_SetWindowFullscreen(gs.win, SDL_WINDOW_FULLSCREEN_DESKTOP);
+					gs.fullscreen = 1;
+				}
 				break;
 
 			case SDL_SCANCODE_RIGHT:
@@ -376,7 +376,7 @@ int handle_events()
 
 				SDL_SetWindowTitle(gs.win, basename(gs.files.a[gs.img_index], title_buf));
 
-				set_rect_bestfit(0);
+				set_rect_bestfit(gs.fullscreen);
 				break;
 
 			case SDL_SCANCODE_LEFT:
@@ -390,7 +390,7 @@ int handle_events()
 
 				SDL_SetWindowTitle(gs.win, basename(gs.files.a[gs.img_index], title_buf));
 
-				set_rect_bestfit(0);
+				set_rect_bestfit(gs.fullscreen);
 				break;
 
 			default:
